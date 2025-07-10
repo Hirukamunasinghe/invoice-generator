@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import {
   Calendar,
   Building2
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 interface Client {
   id: string;
@@ -69,69 +70,52 @@ const Index = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  const [clients, setClients] = useState<Client[]>([
-    {
-      id: '1',
-      name: 'John Smith',
-      email: 'john@example.com',
-      company: 'Smith Design Co.',
-      address: '123 Design St, Creative City, CC 12345'
-    },
-    {
-      id: '2',
-      name: 'Sarah Johnson',
-      email: 'sarah@techstartup.com',
-      company: 'Tech Startup Inc.',
-      address: '456 Innovation Ave, Tech Valley, TV 67890'
-    }
-  ]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(true);
+  const [clientsError, setClientsError] = useState<string | null>(null);
 
-  const [invoices, setInvoices] = useState<Invoice[]>([
-    {
-      id: '1',
-      invoiceNumber: 'INV-001',
-      clientId: '1',
-      client: clients[0],
-      items: [
-        {
-          id: '1',
-          description: 'Website Design',
-          quantity: 1,
-          rate: 2500,
-          amount: 2500
-        }
-      ],
-      subtotal: 2500,
-      tax: 250,
-      total: 2750,
-      status: 'paid',
-      dueDate: '2024-01-15',
-      issueDate: '2024-01-01',
-      notes: 'Thank you for your business!'
-    },
-    {
-      id: '2',
-      invoiceNumber: 'INV-002',
-      clientId: '2',
-      client: clients[1],
-      items: [
-        {
-          id: '2',
-          description: 'Mobile App Development',
-          quantity: 40,
-          rate: 125,
-          amount: 5000
-        }
-      ],
-      subtotal: 5000,
-      tax: 500,
-      total: 5500,
-      status: 'sent',
-      dueDate: '2024-02-01',
-      issueDate: '2024-01-15',
-      notes: 'Payment due within 30 days'
-    }
-  ]);
+  useEffect(() => {
+    const fetchClients = async () => {
+      setClientsLoading(true);
+      setClientsError(null);
+      const { data, error } = await supabase.from('clients').select('*');
+      if (error) {
+        setClientsError(error.message);
+      } else {
+        setClients(data || []);
+      }
+      setClientsLoading(false);
+    };
+    fetchClients();
+  }, []);
+
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(true);
+  const [invoicesError, setInvoicesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchInvoices = async () => {
+      setInvoicesLoading(true);
+      setInvoicesError(null);
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*, client:clients(*)');
+      if (error) {
+        setInvoicesError(error.message);
+      } else {
+        // Map snake_case to camelCase for UI compatibility
+        const mapped = (data || []).map((inv: any) => ({
+          ...inv,
+          invoiceNumber: inv.invoice_number,
+          issueDate: inv.issue_date,
+          dueDate: inv.due_date
+        }));
+        setInvoices(mapped);
+      }
+      setInvoicesLoading(false);
+    };
+    fetchInvoices();
+  }, []);
 
   const [newClient, setNewClient] = useState<Partial<Client>>({
     name: '',
@@ -148,24 +132,73 @@ const Index = () => {
     issueDate: new Date().toISOString().split('T')[0]
   });
 
-  const addClient = () => {
+  const addClient = async () => {
     if (!newClient.name || !newClient.email) {
       toast.error('Name and email are required');
       return;
     }
 
-    const client: Client = {
-      id: Date.now().toString(),
-      name: newClient.name!,
-      email: newClient.email!,
-      company: newClient.company || '',
-      address: newClient.address || ''
-    };
+    const { data, error } = await supabase.from('clients').insert([
+      {
+        name: newClient.name,
+        email: newClient.email,
+        company: newClient.company || '',
+        address: newClient.address || ''
+      }
+    ]);
 
-    setClients([...clients, client]);
+    if (error) {
+      toast.error('Failed to add client: ' + error.message);
+      return;
+    }
+
     setNewClient({ name: '', email: '', company: '', address: '' });
     setShowCreateClient(false);
     toast.success('Client added successfully!');
+
+    // Refetch clients from Supabase
+    setClientsLoading(true);
+    const { data: updatedClients, error: fetchError } = await supabase.from('clients').select('*');
+    if (!fetchError) setClients(updatedClients || []);
+    setClientsLoading(false);
+  };
+
+  const addInvoice = async () => {
+    if (!newInvoice.clientId || !newInvoice.dueDate) {
+      toast.error('Client and due date are required');
+      return;
+    }
+
+    const { data, error } = await supabase.from('invoices').insert([
+      {
+        invoice_number: newInvoice.invoiceNumber || `INV-${Date.now()}`,
+        client_id: Number(newInvoice.clientId),
+        items: newInvoice.items || [],
+        subtotal: newInvoice.subtotal || 0,
+        tax: newInvoice.tax || 0,
+        total: newInvoice.total || 0,
+        status: 'draft',
+        due_date: newInvoice.dueDate,
+        issue_date: newInvoice.issueDate || new Date().toISOString().split('T')[0],
+        notes: newInvoice.notes || ''
+      }
+    ]);
+
+    if (error) {
+      toast.error('Failed to create invoice: ' + error.message);
+      return;
+    }
+
+    setShowCreateInvoice(false);
+    toast.success('Invoice created successfully!');
+
+    // Refetch invoices from Supabase
+    setInvoicesLoading(true);
+    const { data: updatedInvoices, error: fetchError } = await supabase
+      .from('invoices')
+      .select('*, client:clients(*)');
+    if (!fetchError) setInvoices(updatedInvoices || []);
+    setInvoicesLoading(false);
   };
 
   const getStatusColor = (status: string) => {
@@ -178,7 +211,7 @@ const Index = () => {
   };
 
   const filteredInvoices = invoices.filter(invoice => {
-    const matchesSearch = invoice.client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = invoice.client?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || invoice.status === statusFilter;
     return matchesSearch && matchesStatus;
@@ -247,10 +280,12 @@ const Index = () => {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-200">
+                  <th className="text-left py-3 px-4 font-medium text-gray-700">ID</th>
                   <th className="text-left py-3 px-4 font-medium text-gray-700">Invoice</th>
                   <th className="text-left py-3 px-4 font-medium text-gray-700">Client</th>
                   <th className="text-left py-3 px-4 font-medium text-gray-700">Amount</th>
                   <th className="text-left py-3 px-4 font-medium text-gray-700">Status</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-700">Issue Date</th>
                   <th className="text-left py-3 px-4 font-medium text-gray-700">Due Date</th>
                   <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
                 </tr>
@@ -258,20 +293,16 @@ const Index = () => {
               <tbody>
                 {filteredInvoices.map((invoice) => (
                   <tr key={invoice.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="py-4 px-4">{invoice.id}</td>
+                    <td className="py-4 px-4">{invoice.invoiceNumber}</td>
                     <td className="py-4 px-4">
                       <div>
-                        <p className="font-medium text-gray-900">{invoice.invoiceNumber}</p>
-                        <p className="text-sm text-gray-500">{invoice.issueDate}</p>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div>
-                        <p className="font-medium text-gray-900">{invoice.client.name}</p>
-                        <p className="text-sm text-gray-500">{invoice.client.company}</p>
+                        <p className="font-medium text-gray-900">{invoice.client?.name}</p>
+                        <p className="text-sm text-gray-500">{invoice.client?.company}</p>
                       </div>
                     </td>
                     <td className="py-4 px-4 font-medium text-gray-900">
-                      ${invoice.total.toLocaleString()}
+                      ${invoice.total?.toLocaleString()}
                     </td>
                     <td className="py-4 px-4">
                       <Badge variant="outline" className={getStatusColor(invoice.status)}>
@@ -279,7 +310,10 @@ const Index = () => {
                       </Badge>
                     </td>
                     <td className="py-4 px-4 text-gray-600">
-                      {invoice.dueDate}
+                      {invoice.issueDate ? new Date(invoice.issueDate).toLocaleDateString() : ''}
+                    </td>
+                    <td className="py-4 px-4 text-gray-600">
+                      {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : ''}
                     </td>
                     <td className="py-4 px-4">
                       <div className="flex space-x-2">
@@ -548,7 +582,7 @@ const Index = () => {
                   <SelectContent>
                     {clients.map((client) => (
                       <SelectItem key={client.id} value={client.id}>
-                        {client.name} - {client.company}
+                        {client.name}{client.company ? ` - ${client.company}` : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -578,13 +612,7 @@ const Index = () => {
             <Button variant="outline" onClick={() => setShowCreateInvoice(false)}>
               Cancel
             </Button>
-            <Button 
-              onClick={() => {
-                toast.success('Invoice creation feature coming soon!'); 
-                setShowCreateInvoice(false);
-              }}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white"
-            >
+            <Button onClick={addInvoice} className="bg-indigo-600 hover:bg-indigo-700 text-white">
               Create Invoice
             </Button>
           </div>

@@ -104,7 +104,7 @@ const Landing = ({ onGetStarted }: LandingProps) => {
               Trusted by 50,000+ Freelancers
             </Badge>
             
-            <h1 className="text-5xl md:text-7xl font-bold bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-600 bg-clip-text text-transparent mb-6 animate-fade-in">
+            <h1 className="text-5xl md:text-7xl pb-[10px] font-bold bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-600 bg-clip-text text-transparent mb-6 animate-fade-in">
               Professional Invoicing Made Simple
             </h1>
             

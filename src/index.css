@@ -91,7 +91,8 @@
     @apply border-border;
   }
 
-  body {
+  html, body {
+    font-family: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
